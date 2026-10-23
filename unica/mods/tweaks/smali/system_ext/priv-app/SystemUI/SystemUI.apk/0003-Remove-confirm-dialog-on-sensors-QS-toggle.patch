@@ -1,0 +1,53 @@
+From 37f6925c881b952426a14e05b833eea85e0c40 Mon Sep 17 00:00:00 2001
+From: Salvo Giangreco <giangrecosalvo9@gmail.com>
+Date: Fri, 31 Oct 2025 09:46:00 +0100
+Subject: [PATCH] Remove confirm dialog on sensors QS toggle
+
+---
+ .../systemui/qs/tiles/SensorPrivacyToggleTile.smali | 27 ++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/smali_classes3/com/android/systemui/qs/tiles/SensorPrivacyToggleTile.smali b/smali_classes3/com/android/systemui/qs/tiles/SensorPrivacyToggleTile.smali
+--- a/smali_classes3/com/android/systemui/qs/tiles/SensorPrivacyToggleTile.smali
++++ b/smali_classes3/com/android/systemui/qs/tiles/SensorPrivacyToggleTile.smali
+@@ -270,6 +270,8 @@
+ .method public final toggleTileState()V
+     .locals 8
+ 
++    goto :unica_toggle_sensor
++
+     invoke-virtual {p0}, Lcom/android/systemui/qs/tiles/SensorPrivacyToggleTile;->getSensorId()I
+ 
+     move-result v0
+@@ -446,4 +448,29 @@
+ 
+     :cond_3
+     return-void
++
++    :unica_toggle_sensor
++    iget-object v0, p0, Lcom/android/systemui/qs/tiles/SensorPrivacyToggleTile;->mSensorPrivacyController:Lcom/android/systemui/statusbar/policy/IndividualSensorPrivacyController;
++
++    check-cast v0, Lcom/android/systemui/statusbar/policy/IndividualSensorPrivacyControllerImpl;
++
++    const/4 v1, 0x1
++
++    invoke-virtual {p0}, Lcom/android/systemui/qs/tiles/SensorPrivacyToggleTile;->getSensorId()I
++
++    move-result v2
++
++    invoke-virtual {p0}, Lcom/android/systemui/qs/tiles/SensorPrivacyToggleTile;->getSensorId()I
++
++    move-result p0
++
++    invoke-virtual {v0, p0}, Lcom/android/systemui/statusbar/policy/IndividualSensorPrivacyControllerImpl;->isSensorBlocked(I)Z
++
++    move-result p0
++
++    xor-int/2addr p0, v1
++
++    invoke-virtual {v0, v1, v2, p0}, Lcom/android/systemui/statusbar/policy/IndividualSensorPrivacyControllerImpl;->setSensorBlocked(IIZ)V
++
++    return-void
+ .end method
+-- 
+2.51.1

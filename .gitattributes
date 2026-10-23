@@ -1,0 +1,39 @@
+# Set the default behavior, in case people don't have core.autocrlf set.
+* text eol=lf
+
+# Denote all files that are truly binary and should not be modified.
+
+# Common file extensions
+*.apk binary
+*.apk.* binary
+*.apex binary
+*.bin binary
+*.so binary
+*.jar binary
+*.pk8 binary
+*.ogg binary
+*.ico binary
+*.jpg binary
+*.png binary
+*.qmg binary
+*.webp binary
+
+# ROM-specific prebuilt blobs
+prebuilts/bootable/deprecated-ota/updater binary
+prebuilts/*/*/*/** binary
+unica/mods/paradigm/system/** binary
+unica/mods/prophide/system/bin/rezetprop binary
+
+# Device-specific prebuilt blobs
+target/y2slte/blobs/display/system/bin/surfaceflinger -text -diff -merge !eol
+target/x1s/blobs/display/system/bin/surfaceflinger -text -diff -merge !eol
+target/z3s/blobs/display/system/bin/surfaceflinger -text -diff -merge !eol
+target/a52sxq/patches/wpss/vendor/firmware/** binary
+target/a53x/patches/*/vendor/** binary
+target/a73xq/patches/wpss/vendor/firmware/** binary
+target/m52xq/patches/wpss/vendor/firmware/** binary
+target/o1s/patches/variants/vendor/** binary
+target/p3s/patches/variants/vendor/** binary
+target/r8s/patches/vendor/vendor/** binary
+target/r9s/patches/vendor/vendor/** binary
+target/t2s/patches/variants/vendor/** binary

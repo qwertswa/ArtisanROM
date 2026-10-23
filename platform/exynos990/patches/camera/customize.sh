@@ -1,0 +1,215 @@
+LOG_STEP_IN "- Replacing camera blobs"
+BLOBS_LIST="
+system/lib64/libenn_wrapper_system.so
+system/lib64/libpic_best.arcsoft.so
+system/lib64/libarcsoft_dualcam_portraitlighting.so
+system/lib64/libdualcam_refocus_gallery_54.so
+system/lib64/libdualcam_refocus_gallery_50.so
+system/lib64/libhybrid_high_dynamic_range.arcsoft.so
+system/lib64/libae_bracket_hdr.arcsoft.so
+system/lib64/libface_recognition.arcsoft.so
+system/lib64/libDualCamBokehCapture.camera.samsung.so
+"
+for blob in $BLOBS_LIST
+do
+    DELETE_FROM_WORK_DIR "system" "$blob" &
+done
+
+# shellcheck disable=SC2046
+wait $(jobs -p) || exit 1
+
+BLOBS_LIST="
+system/lib64/libPortraitDistortionCorrectionCali.arcsoft.so
+system/lib64/libMultiFrameProcessing20.camera.samsung.so
+system/lib64/libMultiFrameProcessing20Core.camera.samsung.so
+system/lib64/libMultiFrameProcessing20Day.camera.samsung.so
+system/lib64/libMultiFrameProcessing20Tuning.camera.samsung.so
+system/lib64/libMultiFrameProcessing30.camera.samsung.so
+system/lib64/libMultiFrameProcessing30.snapwrapper.camera.samsung.so
+system/lib64/libMultiFrameProcessing30Tuning.camera.samsung.so
+system/lib64/libGeoTrans10.so
+system/lib64/vendor.samsung_slsi.hardware.geoTransService@1.0.so
+system/lib64/libSwIsp_core.camera.samsung.so
+system/lib64/libSwIsp_wrapper_v1.camera.samsung.so
+"
+for blob in $BLOBS_LIST
+do
+    ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "$blob" 0 0 644 "u:object_r:system_lib_file:s0" &
+done
+
+if [[ "$TARGET_CODENAME" == "c1s" || "$TARGET_CODENAME" == "c2s" ]]; then
+    BLOBS_LIST="
+    system/lib64/libofi_seva.so
+    system/lib64/libofi_klm.so
+    system/lib64/libofi_plugin.so
+    system/lib64/libofi_rt_framework_user.so
+    system/lib64/libofi_service_interface.so
+    system/lib64/libofi_gc.so
+    system/lib64/vendor.samsung_slsi.hardware.ofi@2.0.so
+    system/lib64/vendor.samsung_slsi.hardware.ofi@2.1.so
+    "
+    for blob in $BLOBS_LIST
+    do
+        ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "$blob" 0 0 644 "u:object_r:system_lib_file:s0" &
+    done
+fi
+
+# shellcheck disable=SC2046
+wait $(jobs -p) || exit 1
+
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Adding libc++_shared.so dependency for __cxa_demangle symbol"
+patchelf --add-needed "libc++_shared.so" "$WORK_DIR/system/system/lib64/libMultiFrameProcessing20Core.camera.samsung.so"
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Removing HDR10+ check"
+if [[ "$SOURCE_PLATFORM_SDK_VERSION" -lt 36 ]]; then
+    ADD_TO_WORK_DIR "pa3qzcx" "system" "system/lib64/libstagefright.so" 0 0 644 "u:object_r:system_lib_file:s0"
+    HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
+        "010140f97069059420510034" \
+        "010140f91f2003d51f2003d5"
+else
+    # Android 16 changed the Camera::connect ABI. Replacing this library with
+    # the older pa3qzcx blob makes zygote, cameraserver and the media services
+    # fail at link time, so retain the source firmware's matched media stack.
+    LOG "Skipping legacy HDR10+ blob on Android 16"
+    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "system" \
+        "system/lib64/libstagefright.so" 0 0 644 \
+        "u:object_r:system_lib_file:s0"
+
+    # The Android 16 media stack retained Samsung's background recording API,
+    # but MediaCodecSource::suspendRecording(bool) is now a no-op. Exynos 990
+    # Super Slow Motion still creates its persistent encoder input suspended
+    # and relies on that method to resume it, otherwise the recording finishes
+    # with zero encoded frames. Start that input active instead.
+    HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
+        "810240f97ef9019421f5ffd021481091e00314aa2200805225fd0194" \
+        "810240f97ef9019421f5ffd021481091e00314aa0200805225fd0194"
+
+    # Android 16 configures temporal SVC for high-frame-rate recordings. The
+    # legacy Exynos HEVC OMX encoder does not implement the queried extension
+    # and returns ERROR_UNSUPPORTED. Keep the encoder setup going without SVC;
+    # AVC encoders that support the extension continue through the same path.
+    HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
+        "e10740b9e22340b9e00313aa44aa059420020034fa03002a" \
+        "e10740b9e22340b9e00313aa44aa059411000014fa03002a"
+        
+    #Patch the backward-in-time check to fall through and adopt the new session's timestamp.
+    HEX_PATCH "$WORK_DIR/vendor/lib/libstagefright_bufferqueue_helper_vendor.so" \
+        "d7e94601401b71eb060006da" \
+        "d7e94601401b71eb060000bf"     
+fi
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Adding OFI/SEVA libs required by MFP20 (LLHDR/MFHDR)"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libinference_engine.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libofi_gc.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libofi_klm.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libofi_plugin.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libofi_rt_framework_user.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libofi_service_interface.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libofi_seva.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/vendor.samsung_slsi.hardware.ofi@2.0.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/vendor.samsung_slsi.hardware.ofi@2.1.so" 0 0 644 "u:object_r:system_lib_file:s0"
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Adding prebuilt libs from other devices"
+BLOBS_LIST="
+system/lib64/libc++_shared.so
+"
+for blob in $BLOBS_LIST
+do
+    ADD_TO_WORK_DIR "e2sxxx" "system" "$blob" 0 0 644 "u:object_r:system_lib_file:s0"
+done
+
+BLOBS_LIST="
+system/lib64/libeden_wrapper_system.so
+system/lib64/libhigh_dynamic_range.arcsoft.so
+system/lib64/liblow_light_hdr.arcsoft.so
+system/lib64/libhigh_res.arcsoft.so
+system/lib64/libsnap_aidl.snap.samsung.so
+system/lib64/libsuperresolution.arcsoft.so
+system/lib64/libsuperresolution_raw.arcsoft.so
+system/lib64/libsuperresolution_wrapper_v2.camera.samsung.so
+system/lib64/libsuperresolutionraw_wrapper_v2.camera.samsung.so
+"
+for blob in $BLOBS_LIST
+do
+    ADD_TO_WORK_DIR "p3sxxx" "system" "$blob" 0 0 644 "u:object_r:system_lib_file:s0" &
+done
+
+# shellcheck disable=SC2046
+wait $(jobs -p) || exit 1
+
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Adding S21 (p3sxxx) SWISP models"
+DELETE_FROM_WORK_DIR "vendor" "saiv/swisp_1.0"
+ADD_TO_WORK_DIR "p3sxxx" "vendor" "saiv/swisp_1.0"
+
+BLOBS_LIST="
+system/lib64/libSwIsp_core.camera.samsung.so
+system/lib64/libSwIsp_wrapper_v1.camera.samsung.so
+"
+for blob in $BLOBS_LIST
+do
+    ADD_TO_WORK_DIR "p3sxxx" "system" "$blob" 0 0 644 "u:object_r:system_lib_file:s0"
+done
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Adding S21 (p3sxxx) SingleTake models"
+DELETE_FROM_WORK_DIR "vendor" "etc/singletake"
+ADD_TO_WORK_DIR "p3sxxx" "vendor" "etc/singletake"
+
+BLOBS_LIST="
+system/priv-app/SingleTakeService/SingleTakeService.apk
+system/cameradata/singletake/service-feature.xml
+"
+for blob in $BLOBS_LIST
+do
+    ADD_TO_WORK_DIR "p3sxxx" "system" "$blob" 0 0 644 "u:object_r:system_file:s0" &
+done
+
+# shellcheck disable=SC2046
+wait $(jobs -p) || exit 1
+
+LOG_STEP_OUT
+
+LOG_STEP_IN "- Passing per-frame EV to ArcSoft LLHDR/MFHDR"
+# The ArcSoft LLHDR/MFHDR nodes send samsung.android.sensor.captureEv as the frame EV,
+# but the Exynos 990 HAL does not reflect the bracket there, so the p3s ArcSoft libs reject
+# every burst (ARC_LLHDR_Process fail(2)). The bracket offset, in the same 1/256 EV units,
+# is in samsung.android.sensor.multiFrameEv (SemCaptureResult.D1 in SamsungCamera 16.5.02.36).
+# Both native nodes pass (ref EV - frame EV) to the library, so they get the negated offset.
+SMALI_PATCH "system" "system/priv-app/SamsungCamera/SamsungCamera.apk" \
+    "smali_classes3/com/samsung/android/camera/core2/node/llhdr/arcsoft/ArcLlHdrNodeBase.smali" "replace" \
+    'setExtraCaptureInfo(Lcom/samsung/android/camera/core2/local/vendorkey/CaptureMetadata;)V' \
+    'sget-object v2, Lcom/samsung/android/camera/core2/local/vendorkey/SemCaptureResult;->y1:Landroid/hardware/camera2/CaptureResult$Key;' \
+    'sget-object v2, Lcom/samsung/android/camera/core2/local/vendorkey/SemCaptureResult;->D1:Landroid/hardware/camera2/CaptureResult$Key;' \
+    > /dev/null
+SMALI_PATCH "system" "system/priv-app/SamsungCamera/SamsungCamera.apk" \
+    "smali_classes3/com/samsung/android/camera/core2/node/llhdr/arcsoft/ArcLlHdrNodeBase.smali" "replace" \
+    'setExtraCaptureInfo(Lcom/samsung/android/camera/core2/local/vendorkey/CaptureMetadata;)V' \
+    '.locals 3' \
+    '.locals 4' \
+    > /dev/null
+SMALI_PATCH "system" "system/priv-app/SamsungCamera/SamsungCamera.apk" \
+    "smali_classes3/com/samsung/android/camera/core2/node/llhdr/arcsoft/ArcLlHdrNodeBase.smali" "replace" \
+    'setExtraCaptureInfo(Lcom/samsung/android/camera/core2/local/vendorkey/CaptureMetadata;)V' \
+    'filled-new-array {v0, v1, p1}, [Ljava/lang/Object;' \
+    $'    invoke-virtual {p1}, Ljava/lang/Integer;->intValue()I\n    move-result v3\n    neg-int v3, v3\n    invoke-static {v3}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;\n    move-result-object v3\n    filled-new-array {v0, v1, v3}, [Ljava/lang/Object;' \
+    > /dev/null
+SMALI_PATCH "system" "system/priv-app/SamsungCamera/SamsungCamera.apk" \
+    "smali_classes3/com/samsung/android/camera/core2/node/mfhdr/arcsoft/v4/ArcMfHdrNode.smali" "replace" \
+    'nativeCallSpecificCommand(Lcom/samsung/android/camera/core2/local/vendorkey/CaptureMetadata;Lcom/samsung/android/camera/core2/container/ExtraBundle;)V' \
+    'sget-object p2, Lcom/samsung/android/camera/core2/local/vendorkey/SemCaptureResult;->y1:Landroid/hardware/camera2/CaptureResult$Key;' \
+    'sget-object p2, Lcom/samsung/android/camera/core2/local/vendorkey/SemCaptureResult;->D1:Landroid/hardware/camera2/CaptureResult$Key;' \
+    > /dev/null
+SMALI_PATCH "system" "system/priv-app/SamsungCamera/SamsungCamera.apk" \
+    "smali_classes3/com/samsung/android/camera/core2/node/mfhdr/arcsoft/v4/ArcMfHdrNode.smali" "replace" \
+    'nativeCallSpecificCommand(Lcom/samsung/android/camera/core2/local/vendorkey/CaptureMetadata;Lcom/samsung/android/camera/core2/container/ExtraBundle;)V' \
+    'const-string p2, "nativeCallSpecificCommand: captureEv = %d"' \
+    $'    invoke-virtual {p1}, Ljava/lang/Integer;->intValue()I\n    move-result p2\n    neg-int p2, p2\n    invoke-static {p2}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;\n    move-result-object p1\n    const-string p2, "nativeCallSpecificCommand: -multiFrameEv = %d"' \
+    > /dev/null
+LOG_STEP_OUT

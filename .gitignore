@@ -1,0 +1,14 @@
+out/
+
+# Cert
+security/artisanrom_ota.x509.pem
+security/artisanrom_ota.pk8
+security/artisanrom_platform.x509.pem
+security/artisanrom_platform.pk8
+
+#
+# We don't want to ignore the following even if they are dot-files
+#
+!.gitattributes
+!.gitignore
+!.gitmodules
